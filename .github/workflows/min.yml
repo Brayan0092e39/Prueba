@@ -6,7 +6,7 @@ on:
 jobs:
   secure-rdp:
     runs-on: windows-latest
-    timeout: Infinite 
+    timeout-minutes: 999999
 
     steps:
       - name: Configure Core RDP Settings
@@ -83,7 +83,7 @@ jobs:
      
       - name: Verify RDP Accessibility
         run: |
-          Write-Host "Tailscale IP:100.67.88.27 $env:TAILSCALE_IP"
+          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
          
           # Test connectivity using Test-NetConnection against the Tailscale IP on port 3389
           $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
