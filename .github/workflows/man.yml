@@ -48,10 +48,7 @@ jobs:
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
          
           echo "RDP_CREDS=User: RDP | Password:RDP >> $env:GITHUB_ENV
-         
-          if (-not (Get-LocalUser -Name "RDP")) {
-              Write-Error "User creation failed"
-              exit 1
+        
           }
       - name: Install Tailscale
         run: |
