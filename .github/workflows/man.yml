@@ -47,7 +47,7 @@ jobs:
           Add-LocalGroupMember -Group "Administrators" -Member "RDP"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
          
-          Enter "RDP_CREDS=User: RDP | Password:RDP
+          echo "RDP_CREDS=User: RDP | Password:RDP
         
           }
       - name: Install Tailscale
@@ -76,7 +76,7 @@ jobs:
               Write-Error "Tailscale IP not assigned. Exiting."
               exit 1
           }
-          Enter "TAILSCALE_IP=100.67.88.27" >> $env:GITHUB_ENV
+          echo "TAILSCALE_IP=100.67.88.27" >> $env:GITHUB_ENV
      
       - name: Verify RDP Accessibility
         run: |
