@@ -29,16 +29,18 @@ jobs:
           # (Optional) Restart the Remote Desktop service to ensure changes take effect
           Restart-Service -Name TermService -Force
 
-      - name: Create RDP User (No Password)
+      - name: Create RDP User (brayan/brayan)
         run: |
-          # Create user with blank password (Not Recommended for Production)
-          New-LocalUser -Name "RDP" -Password $null -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
+          # Create user with password "brayan" (Please consider security implications)
+          $password = "brayan"
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name "brayan" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "brayan"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "brayan"
 
-          echo "RDP_CREDS=User: RDP | Password: " >> $env:GITHUB_ENV
+          echo "RDP_CREDS=User: brayan | Password: brayan" >> $env:GITHUB_ENV
 
-          if (-not (Get-LocalUser -Name "RDP")) {
+          if (-not (Get-LocalUser -Name "brayan")) {
               Write-Error "User creation failed"
               exit 1
           }
@@ -98,8 +100,8 @@ jobs:
         run: |
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "Address: $env:TAILSCALE_IP"
-          Write-Host "Username: RDP"
-          Write-Host "Password: "  # Password Empty
+          Write-Host "Username: brayan"
+          Write-Host "Password: brayan"
           Write-Host "==================`n"
 
           # Keep runner active indefinitely (or until manually cancelled)
