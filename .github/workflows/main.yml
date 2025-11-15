@@ -1,23 +1,15 @@
-name: RDPon-Gaming-Limited
+name: RDPon
 
 on:
   workflow_dispatch:
 
 jobs:
   secure-rdp:
-    runs-on: windows-latest  # Es mejor un runner auto-hospedado con GPU para gaming
-    timeout-minutes: 120  # Tiempo limitado a 2 horas (120 minutos)
+    runs-on: windows-latest
+    timeout-minutes: 0  # Tiempo ilimitado
 
     steps:
-      - name: Obtener IP Almacenada (Si Existe)
-        id: obtener_ip
-        run: |
-          # Este es un ejemplo MUY SIMPLE. Necesitas un mecanismo de almacenamiento real.
-          # Por ejemplo, podrías usar la API de GitHub para obtener un secreto existente.
-          $ip_almacenada = "100.64.0.1"  # Reemplaza con tu lógica para obtener la IP
-          echo "IP_ALMACENADA=$ip_almacenada" >> $env:GITHUB_ENV
-
-      - name: Configure Core RDP Settings (Gaming Optimized)
+      - name: Configure Core RDP Settings
         run: |
           # Enable Remote Desktop and disable Network Level Authentication (if needed)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
@@ -30,48 +22,21 @@ jobs:
           # Remove any existing rule with the same name to avoid duplication
           netsh advfirewall firewall delete rule name="RDP-Tailscale"
 
-          # For testing, allow any incoming connection on port 3389
+          # Allow any incoming connection on port 3389
           netsh advfirewall firewall add rule name="RDP-Tailscale" `
             dir=in action=allow protocol=TCP localport=3389
 
           # (Optional) Restart the Remote Desktop service to ensure changes take effect
           Restart-Service -Name TermService -Force
 
-          # Enable UDP Port for Better Streaming (Optional, requires Tailscale configuration)
-          netsh advfirewall firewall add rule name="RDP-Tailscale-UDP" `
-            dir=in action=allow protocol=UDP localport=3389
-
-          # Set RDP to prioritize dynamic refresh and video
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "DWMFRAMEINTERVAL" -Value 15 -Force # Tweak frame interval
-
-          # Enable RemoteFX (Only if the OS supports it.  Remove if it causes problems.)
-          # Enable-RemoteFX -Force  # Requires specific OS and Licensing
-
-      - name: Create RDP User with Secure Password
+      - name: Create RDP User (No Password)
         run: |
-          Add-Type -AssemblyName System.Security
-
-          $charSet = @{
-              Upper   = [char[]](65..90)      # A-Z
-              Lower   = [char[]](97..122)     # a-z
-              Number  = [char[]](48..57)      # 0-9
-              Special = ([char[]](33..47) + [char[]](58..64) +
-                         [char[]](91..96) + [char[]](123..126)) # Special characters
-          }
-
-          $rawPassword = @()
-          $rawPassword += $charSet.Upper | Get-Random -Count 4
-          $rawPassword += $charSet.Lower | Get-Random -Count 4
-          $rawPassword += $charSet.Number | Get-Random -Count 4
-          $rawPassword += $charSet.Special | Get-Random -Count 4
-          $password = -join ($rawPassword | Sort-Object { Get-Random })
-
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
+          # Create user with blank password (Not Recommended for Production)
+          New-LocalUser -Name "RDP" -Password $null -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "RDP"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
 
-          echo "RDP_CREDS=User: RDP | Password: $password" >> $env:GITHUB_ENV
+          echo "RDP_CREDS=User: RDP | Password: " >> $env:GITHUB_ENV
 
           if (-not (Get-LocalUser -Name "RDP")) {
               Write-Error "User creation failed"
@@ -80,26 +45,17 @@ jobs:
 
       - name: Install Tailscale
         run: |
-          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.60.1-amd64.msi"  # Reemplaza con una URL válida
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" # Reemplazar si hay una versión más reciente
           $installerPath = "$env:TEMP\tailscale.msi"
 
-          try {
-              Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath -UseBasicParsing -ErrorAction Stop
-              Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-              Remove-Item $installerPath -Force
-          } catch {
-              Write-Error "Failed to download or install Tailscale: $($_.Exception.Message)"
-              exit 1
-          }
-
-      - name: Configurar Tailscale con IP Almacenada (Intento)
-        run: |
-          # Intenta usar la IP almacenada. Esto PUEDE NO FUNCIONAR.
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID --accept-routes --accept-dns=false
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          Remove-Item $installerPath -Force
 
       - name: Establish Tailscale Connection
         run: |
           # Bring up Tailscale with the provided auth key and set a unique hostname
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
 
           # Wait for Tailscale to assign an IP
           $tsIP = $null
@@ -114,27 +70,7 @@ jobs:
               Write-Error "Tailscale IP not assigned. Exiting."
               exit 1
           }
-
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-
-      - name: Install Gaming Dependencies (Optional)
-        run: |
-          # Install DirectX (Web Installer) - May require user interaction on first launch
-          # Invoke-WebRequest -Uri "https://download.microsoft.com/download/1/7/8/178E5A8E-ACA4-45EF-8A1E-ED9B545A3C0A/dxwebsetup.exe" -OutFile "$env:TEMP\dxwebsetup.exe" -UseBasicParsing
-          # Start-Process "$env:TEMP\dxwebsetup.exe" -ArgumentList "/silent" -Wait
-          # Remove-Item "$env:TEMP\dxwebsetup.exe" -Force
-
-          # Install Visual C++ Redistributables (Most Games need this)
-          # Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$env:TEMP\vc_redist.x64.exe" -UseBasicParsing
-          # Start-Process "$env:TEMP\vc_redist.x64.exe" -ArgumentList "/install", "/passive", "/norestart" -Wait
-          # Remove-Item "$env:TEMP\vc_redist.x64.exe" -Force
-
-          # Install .NET Framework (If needed)
-          # Invoke-WebRequest -Uri "https://dotnet.microsoft.com/download/dotnet-framework/net48/runtime" -OutFile "$env:TEMP\dotnet_runtime.exe" -UseBasicParsing
-          # Start-Process "$env:TEMP\dotnet_runtime.exe" -ArgumentList "/install", "/passive", "/norestart" -Wait
-          # Remove-Item "$env:TEMP\dotnet_runtime.exe" -Force
-
-          Write-Host "Gaming Dependencies Installation Skipped.  Uncomment lines to enable (May require manual intervention)."
 
       - name: Verify RDP Accessibility
         run: |
@@ -148,21 +84,26 @@ jobs:
           }
           Write-Host "TCP connectivity successful!"
 
-      - name: Maintain Connection (Limited Time)
+      - name: Install Game
+        run: |
+          # Install 7-Zip
+          Invoke-WebRequest -Uri 'https://www.7-zip.org/a/7z2301-x64.exe' -OutFile 'C:\7z2301-x64.exe'
+          Start-Process 'C:\7z2301-x64.exe' -ArgumentList '/S' -Wait
+
+          # Download and Install Game
+          Invoke-WebRequest -Uri '' -OutFile 'C:\game.exe'  # Insert Game Link
+          Start-Process 'C:\game.exe' -ArgumentList '/S' -Wait
+
+      - name: Maintain Connection
         run: |
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "Address: $env:TAILSCALE_IP"
           Write-Host "Username: RDP"
-          Write-Host "Password: $(echo $env:RDP_CREDS)"
+          Write-Host "Password: "  # Password Empty
           Write-Host "==================`n"
 
-          # Keep runner active for a limited time
-          $startTime = Get-Date
-          $endTime = $startTime.AddMinutes(110) # Mantener la conexión por 110 minutos (un poco menos que el timeout total)
-
-          while ((Get-Date) -lt $endTime) {
-              Write-Host "[$(Get-Date)] RDP Active - Will terminate at $($endTime)"
+          # Keep runner active indefinitely (or until manually cancelled)
+          while ($true) {
+              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
               Start-Sleep -Seconds 300
           }
-
-          Write-Host "RDP session ending due to time limit."
