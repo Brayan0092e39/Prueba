@@ -1,20 +1,18 @@
-name: RDPon-Gaming
+name: RDPon-Gaming-Limited
 
 on:
   workflow_dispatch:
 
 jobs:
   secure-rdp:
-    runs-on:
-      - self-hosted  # Indica que se ejecute en un runner auto-hospedado con GPU
-      - windows
-    timeout-minutes: 43200  # Establecer el tiempo a 30 días, si es necesario
+    runs-on: windows-latest  # Es mejor un runner auto-hospedado con GPU para gaming
+    timeout-minutes: 120  # Tiempo limitado a 2 horas (120 minutos)
 
     steps:
       - name: Obtener IP Almacenada (Si Existe)
         id: obtener_ip
         run: |
-          # Este es un ejemplo MUY SIMPLE.  Necesitas un mecanismo de almacenamiento real.
+          # Este es un ejemplo MUY SIMPLE. Necesitas un mecanismo de almacenamiento real.
           # Por ejemplo, podrías usar la API de GitHub para obtener un secreto existente.
           $ip_almacenada = "100.64.0.1"  # Reemplaza con tu lógica para obtener la IP
           echo "IP_ALMACENADA=$ip_almacenada" >> $env:GITHUB_ENV
@@ -150,7 +148,7 @@ jobs:
           }
           Write-Host "TCP connectivity successful!"
 
-      - name: Maintain Connection
+      - name: Maintain Connection (Limited Time)
         run: |
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "Address: $env:TAILSCALE_IP"
@@ -158,8 +156,13 @@ jobs:
           Write-Host "Password: $(echo $env:RDP_CREDS)"
           Write-Host "==================`n"
 
-          # Keep runner active indefinitely (or until manually cancelled)
-          while ($true) {
-              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
+          # Keep runner active for a limited time
+          $startTime = Get-Date
+          $endTime = $startTime.AddMinutes(110) # Mantener la conexión por 110 minutos (un poco menos que el timeout total)
+
+          while ((Get-Date) -lt $endTime) {
+              Write-Host "[$(Get-Date)] RDP Active - Will terminate at $($endTime)"
               Start-Sleep -Seconds 300
           }
+
+          Write-Host "RDP session ending due to time limit."
