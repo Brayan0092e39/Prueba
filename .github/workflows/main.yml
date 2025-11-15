@@ -199,6 +199,8 @@ class VirtualPC:
             self.execute_instruction()
 
         print("Programa finalizado.")
+        with open("output.txt", "w") as f:
+            f.write(f"Tailscale IP: {self.tailscale_ip}\\n")
 
 # Ejemplo de uso:
 pc = VirtualPC(tailscale_ip="100.101.102.103")  # Reemplaza con tu IP de Tailscale
