@@ -26,20 +26,11 @@ jobs:
           Enable-NetFirewallRule -DisplayName "Remote Desktop - User Mode (TCP-In)"
           Set-NetFirewallRule -DisplayName "Remote Desktop - User Mode (TCP-In)" -Enabled True -Action Block
 
-      - name: Create Secure User
+      - name: Create Secure User (brayan/123456)
         run: |
-          # Solicitar usuario y contraseña
-          $username = Read-Host "Ingrese el nombre de usuario para RDP"
-          if (!$username) {
-            Write-Error "No se proporcionó un nombre de usuario. El workflow fallará."
-            exit 1
-          }
-
-          $password = Read-Host -AsSecureString "Ingrese la contraseña para el usuario RDP"
-          if (!$password) {
-            Write-Error "No se proporcionó una contraseña. El workflow fallará."
-            exit 1
-          }
+          # Establecer el nombre de usuario y la contraseña
+          $username = "brayan"
+          $password = "123456"
 
           # Crear el usuario con la contraseña proporcionada
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
@@ -51,7 +42,7 @@ jobs:
           # Imprimir instrucciones (IMPORTANTE: No mostrar la contraseña en el log)
           Write-Host "VM creada correctamente."
           Write-Host "Usuario: $username"
-          Write-Host "Por favor, guarda la contraseña que ingresaste de forma segura."
+          Write-Host "Por favor, recuerda la contraseña: 123456"
 
           # Guardar el nombre de usuario como secreto
           echo "::add-mask::$username"
