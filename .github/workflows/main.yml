@@ -1,111 +1,92 @@
-name: RDPon
+name: Attempt to Maintain RDP VM
 
 on:
   workflow_dispatch:
 
 jobs:
-  secure-rdp:
+  build:
     runs-on: windows-latest
-    timeout-minutes: 0  # Tiempo ilimitado
+    timeout-minutes: 4320 # Máximo permitido (72 horas), pero no garantiza la ejecución continua
 
     steps:
-      - name: Configure Core RDP Settings
+      - name: Get Previous Tailscale IP (if any)
+        id: get_ip
         run: |
-          # Enable Remote Desktop and disable Network Level Authentication (if needed)
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
-                             -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                             -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                             -Name "SecurityLayer" -Value 0 -Force
-
-          # Remove any existing rule with the same name to avoid duplication
-          netsh advfirewall firewall delete rule name="RDP-Tailscale"
-
-          # Allow any incoming connection on port 3389
-          netsh advfirewall firewall add rule name="RDP-Tailscale" `
-            dir=in action=allow protocol=TCP localport=3389
-
-          # (Optional) Restart the Remote Desktop service to ensure changes take effect
-          Restart-Service -Name TermService -Force
-
-      - name: Create RDP User (brayan/brayan)
-        run: |
-          # Create user with password "brayan" (Please consider security implications)
-          $password = "brayan"
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name "brayan" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "brayan"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "brayan"
-
-          echo "RDP_CREDS=User: brayan | Password: brayan" >> $env:GITHUB_ENV
-
-          if (-not (Get-LocalUser -Name "brayan")) {
-              Write-Error "User creation failed"
-              exit 1
+          $previous_ip = "${{ secrets.TAILSCALE_IP }}"
+          if ($previous_ip) {
+            echo "::set-output name=ip::$previous_ip"
+            Write-Host "IP de Tailscale anterior encontrada: $previous_ip"
+          } else {
+            Write-Host "No se encontró IP de Tailscale anterior."
           }
+
+      - name: Harden Windows
+        run: |
+          # Habilitar Firewall y bloquear RDP predeterminado (mantener)
+          Enable-NetFirewallRule -DisplayName "Remote Desktop - User Mode (TCP-In)"
+          Set-NetFirewallRule -DisplayName "Remote Desktop - User Mode (TCP-In)" -Enabled True -Action Block
+
+      - name: Create Secure User
+        run: |
+          # Solicitar usuario y contraseña
+          $username = Read-Host "Ingrese el nombre de usuario para RDP"
+          if (!$username) {
+            Write-Error "No se proporcionó un nombre de usuario. El workflow fallará."
+            exit 1
+          }
+
+          $password = Read-Host -AsSecureString "Ingrese la contraseña para el usuario RDP"
+          if (!$password) {
+            Write-Error "No se proporcionó una contraseña. El workflow fallará."
+            exit 1
+          }
+
+          # Crear el usuario con la contraseña proporcionada
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
+
+          # Agregar el usuario al grupo de usuarios de Escritorio Remoto
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+
+          # Imprimir instrucciones (IMPORTANTE: No mostrar la contraseña en el log)
+          Write-Host "VM creada correctamente."
+          Write-Host "Usuario: $username"
+          Write-Host "Por favor, guarda la contraseña que ingresaste de forma segura."
+
+          # Guardar el nombre de usuario como secreto
+          echo "::add-mask::$username"
+          echo "::set-secret name=RDP_USERNAME::$username"
 
       - name: Install Tailscale
         run: |
-          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" # Reemplazar si hay una versión más reciente
+          # (Mismo código de instalación de Tailscale)
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi"
           $installerPath = "$env:TEMP\tailscale.msi"
-
           Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
           Remove-Item $installerPath -Force
 
-      - name: Establish Tailscale Connection
+      - name: Connect Tailscale
         run: |
-          # Bring up Tailscale with the provided auth key and set a unique hostname
+          # (Mismo código de conexión de Tailscale)
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
 
-          # Wait for Tailscale to assign an IP
-          $tsIP = $null
-          $retries = 0
-          while (-not $tsIP -and $retries -lt 10) {
-              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-              Start-Sleep -Seconds 5
-              $retries++
+          # Obtener la IP de Tailscale
+          $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+          if (!$tsIP) {
+            Write-Error "No se pudo obtener la IP de Tailscale."
+            exit 1
           }
 
-          if (-not $tsIP) {
-              Write-Error "Tailscale IP not assigned. Exiting."
-              exit 1
-          }
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          Write-Host "Dirección IP de Tailscale: $tsIP"
 
-      - name: Verify RDP Accessibility
+          # Guardar la IP en un secreto (para el próximo workflow)
+          echo "::add-mask::$tsIP" # Mascarar la IP en el log
+          echo "::set-secret name=TAILSCALE_IP::$tsIP" # Guardar como secreto
+
+      - name: Configure RDP Firewall (Tailscale Only)
         run: |
-          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
-
-          # Test connectivity using Test-NetConnection against the Tailscale IP on port 3389
-          $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
-          if (-not $testResult.TcpTestSucceeded) {
-              Write-Error "TCP connection to RDP port 3389 failed"
-              exit 1
-          }
-          Write-Host "TCP connectivity successful!"
-
-      - name: Install Game
-        run: |
-          # Install 7-Zip
-          Invoke-WebRequest -Uri 'https://www.7-zip.org/a/7z2301-x64.exe' -OutFile 'C:\7z2301-x64.exe'
-          Start-Process 'C:\7z2301-x64.exe' -ArgumentList '/S' -Wait
-
-          # Download and Install Game
-          Invoke-WebRequest -Uri '' -OutFile 'C:\game.exe'  # Insert Game Link
-          Start-Process 'C:\game.exe' -ArgumentList '/S' -Wait
-
-      - name: Maintain Connection
-        run: |
-          Write-Host "`n=== RDP ACCESS ==="
-          Write-Host "Address: $env:TAILSCALE_IP"
-          Write-Host "Username: brayan"
-          Write-Host "Password: brayan"
-          Write-Host "==================`n"
-
-          # Keep runner active indefinitely (or until manually cancelled)
-          while ($true) {
-              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
-              Start-Sleep -Seconds 300
-          }
+          # (Mismo código de configuración de firewall, usando la IP actual)
+          $tsIP = "${{ steps.connect_tailscale.outputs.tsIP }}" # Obtener la IP del paso anterior
+          New-NetFirewallRule -DisplayName "RDP - Tailscale Only" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3389 -RemoteAddress $tsIP
+          Disable-NetFirewallRule -DisplayName "Remote Desktop - User Mode (TCP-In)"
