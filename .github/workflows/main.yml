@@ -1,83 +1,228 @@
-name: Attempt to Maintain RDP VM
+import os
+
+# Código de la PC Virtual
+class VirtualPC:
+    def __init__(self, memory_size=1024, tailscale_ip="100.100.100.100"):
+        self.memory = [0] * memory_size
+        self.registers = {
+            'PC': 0,
+            'ACC': 0
+        }
+        self.instructions = {
+            'LOAD': self.load,
+            'ADD': self.add,
+            'STORE': self.store,
+            'HALT': self.halt,
+            'PRINT_IP': self.print_ip  # Nueva instrucción para mostrar la IP
+        }
+        self.running = True
+        self.tailscale_ip = tailscale_ip  # IP de Tailscale asignada
+
+    def load(self, address):
+        address = int(address)
+        self.registers['ACC'] = self.memory[address]
+        self.registers['PC'] += 2
+
+    def add(self, address):
+        address = int(address)
+        self.registers['ACC'] += self.memory[address]
+        self.registers['PC'] += 2
+
+    def store(self, address):
+        address = int(address)
+        self.memory[address] = self.registers['ACC']
+        self.registers['PC'] += 2
+
+    def halt(self, _):
+        self.running = False
+        self.registers['PC'] += 1
+
+    def print_ip(self, _):
+        """Muestra la IP de Tailscale."""
+        print(f"Tailscale IP: {self.tailscale_ip}")
+        self.registers['PC'] += 1
+
+    def execute_instruction(self):
+        if not self.running:
+            return
+
+        instruction = self.memory[self.registers['PC']]
+        instruction = str(instruction)
+        operand = self.memory[self.registers['PC'] + 1]
+
+        if instruction in self.instructions:
+            self.instructions[instruction](operand)
+        else:
+            print(f"Instrucción desconocida: {instruction}")
+            self.running = False
+
+    def load_program(self, program):
+        address = 0
+        for instruction in program:
+            self.memory[address] = instruction
+            address += 1
+
+    def run(self):
+        self.running = True
+        while self.running:
+            self.execute_instruction()
+
+        print("Programa finalizado.")
+
+# Ejemplo de uso:
+pc = VirtualPC(tailscale_ip="100.101.102.103")  # Reemplaza con tu IP de Tailscale
+
+# Programa de ejemplo:
+# PRINT_IP  ; Muestra la IP de Tailscale
+# HALT      ; Detiene el programa
+
+program = [
+    'PRINT_IP', 0,
+    'HALT', 0
+]
+
+# Cargar el programa en la memoria
+pc.load_program(program)
+
+# Ejecutar el programa
+pc.run()
+
+
+# Contenido del archivo .github/workflows/virtual_pc.yml
+github_actions_workflow = """
+name: Virtual PC Simulation
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  build:
-    runs-on: windows-latest
-    timeout-minutes: 4320 # Máximo permitido (72 horas), pero no garantiza la ejecución continua
+  run_simulation:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Get Previous Tailscale IP (if any)
-        id: get_ip
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies (si es necesario)
         run: |
-          $previous_ip = "${{ secrets.TAILSCALE_IP }}"
-          if ($previous_ip) {
-            echo "::set-output name=ip::$previous_ip"
-            Write-Host "IP de Tailscale anterior encontrada: $previous_ip"
-          } else {
-            Write-Host "No se encontró IP de Tailscale anterior."
-          }
+          python -m pip install --upgrade pip
 
-      - name: Harden Windows
+      - name: Run Virtual PC simulation
+        run: python script.py
+
+      - name: Output result
         run: |
-          # Habilitar Firewall y bloquear RDP predeterminado (mantener)
-          Enable-NetFirewallRule -DisplayName "Remote Desktop - User Mode (TCP-In)"
-          Set-NetFirewallRule -DisplayName "Remote Desktop - User Mode (TCP-In)" -Enabled True -Action Block
+          echo "Result of Virtual PC simulation:"
+          cat output.txt
+"""
 
-      - name: Create Secure User (brayan/123456)
-        run: |
-          # Establecer el nombre de usuario y la contraseña
-          $username = "brayan"
-          $password = "123456"
+# Guardar el script de Python en un archivo
+with open("script.py", "w") as f:
+    f.write("""
+import os
 
-          # Crear el usuario con la contraseña proporcionada
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
+# Código de la PC Virtual
+class VirtualPC:
+    def __init__(self, memory_size=1024, tailscale_ip="100.100.100.100"):
+        self.memory = [0] * memory_size
+        self.registers = {
+            'PC': 0,
+            'ACC': 0
+        }
+        self.instructions = {
+            'LOAD': self.load,
+            'ADD': self.add,
+            'STORE': self.store,
+            'HALT': self.halt,
+            'PRINT_IP': self.print_ip  # Nueva instrucción para mostrar la IP
+        }
+        self.running = True
+        self.tailscale_ip = tailscale_ip  # IP de Tailscale asignada
 
-          # Agregar el usuario al grupo de usuarios de Escritorio Remoto
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+    def load(self, address):
+        address = int(address)
+        self.registers['ACC'] = self.memory[address]
+        self.registers['PC'] += 2
 
-          # Imprimir instrucciones (IMPORTANTE: No mostrar la contraseña en el log)
-          Write-Host "VM creada correctamente."
-          Write-Host "Usuario: $username"
-          Write-Host "Por favor, recuerda la contraseña: 123456"
+    def add(self, address):
+        address = int(address)
+        self.registers['ACC'] += self.memory[address]
+        self.registers['PC'] += 2
 
-          # Guardar el nombre de usuario como secreto
-          echo "::add-mask::$username"
-          echo "::set-secret name=RDP_USERNAME::$username"
+    def store(self, address):
+        address = int(address)
+        self.memory[address] = self.registers['ACC']
+        self.registers['PC'] += 2
 
-      - name: Install Tailscale
-        run: |
-          # (Mismo código de instalación de Tailscale)
-          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi"
-          $installerPath = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-          Remove-Item $installerPath -Force
+    def halt(self, _):
+        self.running = False
+        self.registers['PC'] += 1
 
-      - name: Connect Tailscale
-        run: |
-          # (Mismo código de conexión de Tailscale)
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+    def print_ip(self, _):
+        \"\"\"Muestra la IP de Tailscale.\"\"\"
+        print(f"Tailscale IP: {self.tailscale_ip}")
+        self.registers['PC'] += 1
 
-          # Obtener la IP de Tailscale
-          $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-          if (!$tsIP) {
-            Write-Error "No se pudo obtener la IP de Tailscale."
-            exit 1
-          }
+    def execute_instruction(self):
+        if not self.running:
+            return
 
-          Write-Host "Dirección IP de Tailscale: $tsIP"
+        instruction = self.memory[self.registers['PC']]
+        instruction = str(instruction)
+        operand = self.memory[self.registers['PC'] + 1]
 
-          # Guardar la IP en un secreto (para el próximo workflow)
-          echo "::add-mask::$tsIP" # Mascarar la IP en el log
-          echo "::set-secret name=TAILSCALE_IP::$tsIP" # Guardar como secreto
+        if instruction in self.instructions:
+            self.instructions[instruction](operand)
+        else:
+            print(f"Instrucción desconocida: {instruction}")
+            self.running = False
 
-      - name: Configure RDP Firewall (Tailscale Only)
-        run: |
-          # (Mismo código de configuración de firewall, usando la IP actual)
-          $tsIP = "${{ steps.connect_tailscale.outputs.tsIP }}" # Obtener la IP del paso anterior
-          New-NetFirewallRule -DisplayName "RDP - Tailscale Only" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3389 -RemoteAddress $tsIP
-          Disable-NetFirewallRule -DisplayName "Remote Desktop - User Mode (TCP-In)"
+    def load_program(self, program):
+        address = 0
+        for instruction in program:
+            self.memory[address] = instruction
+            address += 1
+
+    def run(self):
+        self.running = True
+        while self.running:
+            self.execute_instruction()
+
+        print("Programa finalizado.")
+
+# Ejemplo de uso:
+pc = VirtualPC(tailscale_ip="100.101.102.103")  # Reemplaza con tu IP de Tailscale
+
+# Programa de ejemplo:
+# PRINT_IP  ; Muestra la IP de Tailscale
+# HALT      ; Detiene el programa
+
+program = [
+    'PRINT_IP', 0,
+    'HALT', 0
+]
+
+# Cargar el programa en la memoria
+pc.load_program(program)
+
+# Ejecutar el programa
+pc.run()
+""")
+
+# Guardar el workflow de GitHub Actions en un archivo
+os.makedirs(".github/workflows", exist_ok=True)
+with open(".github/workflows/virtual_pc.yml", "w") as f:
+    f.write(github_actions_workflow)
+
+print("Archivos 'script.py' y '.github/workflows/virtual_pc.yml' creados.")
+print("Asegúrate de subir estos archivos a tu repositorio de GitHub.")
