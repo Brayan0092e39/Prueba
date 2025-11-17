@@ -1,22 +1,35 @@
-name: TOOLBOXLAP
+name: Combined Workflow - Game Simulation and Tailscale
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-  build:
-    name: Start Building...
-    runs-on: windows-latest
-    timeout-minutes: 360
-    
+  game-simulation:
+    runs-on: ubuntu-latest
     steps:
-      - name: Downloading & Installing Essentials
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build Docker image (Game)
+        run: docker build -t my-game-env .
+
+      - name: Run game simulation
+        run: docker run my-game-env
+
+  tailscale-connect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Tailscale
         run: |
-          Invoke-WebRequest -Uri "https://gitlab.com/raposabrty/pcrdp/-/raw/main/Downloads.bat" -OutFile "Downloads.bat"
-          cmd /c Downloads.bat
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo tailscale up --auth-key=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=github-actions-runner
 
-      - name: Show Website
-        run: cmd /c show.bat
-
-      - name: Time Counter
-        run: cmd /c loop.bat
+      - name: Test Connection
+        run: |
+          # Reemplaza <IP_DE_TU_MAQUINA> con la IP de Tailscale de tu máquina virtual
+          ping -c 3 <IP_DE_TU_MAQUINA>
